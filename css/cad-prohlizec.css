@@ -124,6 +124,23 @@ label.ck input{accent-color:var(--acc);margin:0;flex:0 0 auto}
 .grp{margin-bottom:6px}
 .grp>.gh{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--acc2);font-weight:500;margin:0 0 2px;
   border-bottom:1px solid var(--line);padding-bottom:2px}
+.gh-title{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gh-export-btn{
+  background:transparent;border:1px solid transparent;color:var(--dim);border-radius:3px;
+  width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;flex:0 0 20px;opacity:0.7;transition:all .15s ease;
+}
+.gh-export-btn:hover{opacity:1;color:var(--acc);background:rgba(232,84,0,0.08);border-color:rgba(232,84,0,0.2)}
+.gh-export-btn svg{width:12px;height:12px}
+
+.lay-export-btn{
+  background:transparent;border:1px solid transparent;color:var(--dim);border-radius:3px;
+  width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;margin-left:4px;flex:0 0 18px;opacity:0.4;transition:all .15s ease;
+}
+label.ck:hover .lay-export-btn{opacity:0.85}
+.lay-export-btn:hover{opacity:1!important;color:var(--acc);background:rgba(232,84,0,0.1);border-color:rgba(232,84,0,0.25)}
+.lay-export-btn svg{width:11px;height:11px}
 
 /* ---------- sekce vrstvy ---------- */
 .sec-layers{flex:1 1 auto;min-height:150px;}
@@ -178,6 +195,55 @@ label.ck input{accent-color:var(--acc);margin:0;flex:0 0 auto}
 .gi-wrap{display:inline-flex;align-items:center;gap:2px;margin-left:4px;flex:0 0 auto}
 .gi-badge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;cursor:default}
 .gi{width:12px;height:12px;display:block}
+
+/* ---------- Export modal ---------- */
+.modal-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.45);backdrop-filter:blur(2px);
+  z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px;
+}
+.modal-dialog{
+  background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  width:420px;max-width:95vw;max-height:90vh;
+  display:flex;flex-direction:column;box-shadow:0 8px 24px rgba(0,0,0,0.2);overflow:hidden;
+}
+.modal-header{
+  padding:10px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;background:var(--sec-hd);
+}
+.modal-title{display:flex;align-items:center;gap:8px;color:var(--acc2)}
+.modal-title h3{margin:0;font-size:13px;font-weight:600;letter-spacing:.2px}
+.modal-close{
+  background:none;border:none;font-size:18px;color:var(--dim);
+  cursor:pointer;line-height:1;padding:2px 6px;border-radius:3px;
+}
+.modal-close:hover{color:var(--err);background:rgba(231,3,41,0.08)}
+.modal-body{padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:11px;font-weight:500;color:var(--acc2);text-transform:uppercase;letter-spacing:.3px}
+.exp-layer-actions{display:flex;gap:4px;align-items:center;font-size:11px}
+.btn-link{
+  background:none;border:none;color:var(--acc);cursor:pointer;padding:0;font-size:11px;text-decoration:underline;
+}
+.btn-link:hover{color:var(--acc2)}
+.exp-layers-box{
+  max-height:180px;overflow-y:auto;border:1px solid var(--line);
+  border-radius:4px;background:var(--bg2);padding:6px 8px;display:flex;flex-direction:column;gap:4px;
+}
+.exp-layer-row{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none;padding:1px 0}
+.exp-layer-row input{accent-color:var(--acc);margin:0}
+.modal-footer{
+  padding:10px 14px;border-top:1px solid var(--line);
+  display:flex;align-items:center;justify-content:flex-end;gap:8px;background:var(--bg2);
+}
+.btn-primary, .btn-secondary{
+  border-radius:4px;padding:6px 12px;font-size:12px;cursor:pointer;
+  display:inline-flex;align-items:center;font-weight:500;transition:all .15s ease;
+}
+.btn-primary{background:var(--acc);color:#fff;border:1px solid var(--acc)}
+.btn-primary:hover{background:#d04b00;border-color:#d04b00}
+.btn-secondary{background:var(--bg);color:var(--fg);border:1px solid var(--line)}
+.btn-secondary:hover{background:#e6e9ee}
 
 @media (max-width:820px){
   body{flex-direction:column}

@@ -96,7 +96,7 @@
       case 'SPLINE': return 'spline';
       case 'LINE': return 'line';
       case 'SOLID': case '3DFACE': return 'polygon';
-      case 'LWPOLYLINE': case 'POLYLINE':
+      case 'LWPOLYLINE': case 'POLYLINE': case 'POLYLINE2D': case 'POLYLINE_2D': case 'POLYLINE3D': case 'POLYLINE_3D':
         // Check if closed polygon
         if (f.props && f.props['uzavřený'] === 'ano') return 'polygon';
         return 'polyline';
@@ -146,13 +146,56 @@
   /* --- DWG (libredwg-web DwgDatabase) --------------------------- */
 
   function normalizeDwg(db, fileName) {
+    if (!db) return { source: fileName, features: [], layers: [], bbox: [Infinity, Infinity, -Infinity, -Infinity], skipped: {} };
     var col = new Collector(), i;
     var layerTab = (db.tables && db.tables.LAYER && db.tables.LAYER.entries) || [];
     for (i = 0; i < layerTab.length; i++) col.layer(layerTab[i].name, layerTab[i].colorIndex);
+
     var blocks = {};
+    var blockByHandle = {};
     var brs = (db.tables && db.tables.BLOCK_RECORD && db.tables.BLOCK_RECORD.entries) || [];
-    for (i = 0; i < brs.length; i++) blocks[brs[i].name] = brs[i];
-    walk(db.entities || [], [1, 0, 0, 1, 0, 0], null, 0);
+    var modelSpaceHandle = null;
+    for (i = 0; i < brs.length; i++) {
+      var br = brs[i];
+      if (br.name === '*MODEL_SPACE' || br.name === '*Model_Space') {
+        modelSpaceHandle = br.handle;
+      }
+      if (br.name) blocks[br.name] = br;
+      if (br.handle) blockByHandle[br.handle] = br;
+      if (!br.entities) br.entities = [];
+    }
+
+    // Procházení a oddělení entit:
+    // Pokud má entita ownerBlockRecordSoftId odkazující na ne-modelový blok,
+    // přesuneme ji do definice tohoto bloku, aby neznečišťovala modelový prostor
+    // (stává se zejména v DWG AutoCAD R11/R12).
+    var rawEnts = db.entities || [];
+    var modelEnts = [];
+    for (i = 0; i < rawEnts.length; i++) {
+      var ent = rawEnts[i];
+      var owner = ent.ownerBlockRecordSoftId;
+      if (owner && owner !== modelSpaceHandle && owner !== '0' && blockByHandle[owner]) {
+        blockByHandle[owner].entities.push(ent);
+      } else {
+        modelEnts.push(ent);
+      }
+    }
+
+    // Pro INSERTy bez zadaného jména bloku (R11/R12 DWG)
+    var userBlocks = brs.filter(function (b) {
+      return b.name && b.name !== '*MODEL_SPACE' && b.name !== '*Model_Space' &&
+             b.name !== '*PAPER_SPACE' && b.name !== '*Paper_Space';
+    });
+    if (userBlocks.length === 1) {
+      var defBlkName = userBlocks[0].name;
+      for (i = 0; i < modelEnts.length; i++) {
+        if (modelEnts[i].type === 'INSERT' && (!modelEnts[i].name || modelEnts[i].name === '')) {
+          modelEnts[i].name = defBlkName;
+        }
+      }
+    }
+
+    walk(modelEnts, [1, 0, 0, 1, 0, 0], null, 0);
 
     function pt(p) { return [p.x, p.y]; }
     function walk(ents, mat, parentColor, depth) {
@@ -179,7 +222,11 @@
         case 'LINE':
           push(e, aci, 'line', [pt(e.startPoint), pt(e.endPoint)], mat); break;
         case 'LWPOLYLINE':
-        case 'POLYLINE': {
+        case 'POLYLINE':
+        case 'POLYLINE2D':
+        case 'POLYLINE_2D':
+        case 'POLYLINE3D':
+        case 'POLYLINE_3D': {
           var vs = e.vertices || [], pts = [], k;
           if (!vs.length) { col.skip(e.type); break; }
           pts.push(pt(vs[0]));
@@ -187,7 +234,7 @@
             var b = vs[k - 1].bulge || 0;
             if (b) pts = pts.concat(bulgePts(pt(vs[k - 1]), pt(vs[k]), b)); else pts.push(pt(vs[k]));
           }
-          var closed = !!(e.flag & 512) || !!(e.isClosed) || !!(e.flag & 1 && e.type === 'POLYLINE');
+          var closed = !!(e.flag & 512) || !!(e.isClosed) || !!(e.flag & 1);
           if (closed && vs.length > 2) {
             var lb = vs[vs.length - 1].bulge || 0;
             if (lb) pts = pts.concat(bulgePts(pt(vs[vs.length - 1]), pt(vs[0]), lb)); else pts.push(pt(vs[0]));
@@ -226,9 +273,11 @@
         case 'INSERT': {
           var blk = blocks[e.name];
           if (!blk || depth > 4) { col.skip('INSERT'); break; }
-          var m = mulMat(mat, mkMat(pt(e.insertionPoint), e.xScale || 1, e.yScale || 1, e.rotation || 0));
-          if (blk.basePoint && (blk.basePoint.x || blk.basePoint.y))
-            m = mulMat(m, [1, 0, 0, 1, -blk.basePoint.x, -blk.basePoint.y]);
+          var insPt = pt(e.insertionPoint || e.position || e.point || { x: 0, y: 0 });
+          var m = mulMat(mat, mkMat(insPt, e.xScale || 1, e.yScale || 1, e.rotation || 0));
+          var bp = blk.basePoint || blk.position;
+          if (bp && (bp.x || bp.y))
+            m = mulMat(m, [1, 0, 0, 1, -bp.x, -bp.y]);
           walk(blk.entities || [], m, aci === BYLAYER ? null : aci, depth + 1);
           if (e.attribs && e.attribs.length) walk(e.attribs, mat, aci, depth + 1);
           break;
@@ -273,7 +322,11 @@
           if (!e.vertices || e.vertices.length < 2) { col.skip('LINE'); break; }
           push(e, aci, 'line', e.vertices.map(pt), mat); break;
         case 'LWPOLYLINE':
-        case 'POLYLINE': {
+        case 'POLYLINE':
+        case 'POLYLINE2D':
+        case 'POLYLINE_2D':
+        case 'POLYLINE3D':
+        case 'POLYLINE_3D': {
           var vs = e.vertices || [], pts = [], k;
           if (!vs.length) { col.skip(e.type); break; }
           pts.push(pt(vs[0]));
@@ -672,6 +725,23 @@
       add(k.charAt(0).toUpperCase() + k.slice(1), esc(String(v)));
     }
     box.innerHTML = '<dl>' + rows.join('') + '</dl>';
+
+    var exportDiv = document.createElement('div');
+    exportDiv.style.marginTop = '10px';
+    exportDiv.style.paddingTop = '8px';
+    exportDiv.style.borderTop = '1px solid var(--line)';
+    var btnExp = document.createElement('button');
+    btnExp.type = 'button';
+    btnExp.className = 'btn-secondary';
+    btnExp.style.width = '100%';
+    btnExp.style.justifyContent = 'center';
+    btnExp.style.gap = '6px';
+    btnExp.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportovat úroveň „' + esc(f.layer) + '“ do SHP';
+    btnExp.onclick = function () {
+      window.CadExportShp.exportLayerToShp(ds, f.layer);
+    };
+    exportDiv.appendChild(btnExp);
+    box.appendChild(exportDiv);
   }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
 
@@ -701,9 +771,25 @@
     host.innerHTML = '';
     datasets.forEach(function (ds) {
       var g = document.createElement('div'); g.className = 'grp';
-      var h = document.createElement('p'); h.className = 'gh';
-      h.textContent = ds.name + ' · ' + ds.res.features.length + ' objektů';
+      var h = document.createElement('div'); h.className = 'gh';
+      var hTitle = document.createElement('span');
+      hTitle.className = 'gh-title';
+      hTitle.textContent = ds.name + ' · ' + ds.res.features.length + ' objektů';
+      h.appendChild(hTitle);
+
+      var btnExpDs = document.createElement('button');
+      btnExpDs.type = 'button';
+      btnExpDs.className = 'gh-export-btn';
+      btnExpDs.title = 'Exportovat všechny úrovně do SHP (ZIP)';
+      btnExpDs.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+      btnExpDs.onclick = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.CadExportShp.exportDatasetToShp(ds);
+      };
+      h.appendChild(btnExpDs);
       g.appendChild(h);
+
       ds.res.layers.forEach(function (l) {
         var lb = document.createElement('label'); lb.className = 'ck';
         var cb = document.createElement('input'); cb.type = 'checkbox';
@@ -729,7 +815,24 @@
           gicons.appendChild(ic);
         });
         var cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.textContent = l.count;
-        lb.appendChild(cb); lb.appendChild(sw); lb.appendChild(nm); lb.appendChild(gicons); lb.appendChild(cnt);
+
+        var btnExpLay = document.createElement('button');
+        btnExpLay.type = 'button';
+        btnExpLay.className = 'lay-export-btn';
+        btnExpLay.title = 'Exportovat úroveň „' + l.name + '“ do SHP (ZIP)';
+        btnExpLay.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+        btnExpLay.onclick = function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.CadExportShp.exportLayerToShp(ds, l.name);
+        };
+
+        lb.appendChild(cb);
+        lb.appendChild(sw);
+        lb.appendChild(nm);
+        lb.appendChild(gicons);
+        lb.appendChild(cnt);
+        lb.appendChild(btnExpLay);
         lb.dataset.name = l.name.toLowerCase();
         g.appendChild(lb);
       });
@@ -797,6 +900,124 @@
       w.style.display = w.style.display === 'none' ? 'block' : 'none';
       this.classList.toggle('active');
       if (w.style.display === 'block') document.getElementById('layerfilter').focus();
+    };
+  }
+
+  /* ---------- Export dialog ---------- */
+  var exportModal = document.getElementById('export-modal');
+  var btnExportDialog = document.getElementById('btn-export-dialog');
+  var btnExportClose = document.getElementById('btn-export-close');
+  var btnExportCancel = document.getElementById('btn-export-cancel');
+  var btnExportRun = document.getElementById('btn-export-run');
+  var expDatasetSelect = document.getElementById('exp-dataset');
+  var expCrsSelect = document.getElementById('exp-crs');
+  var expLayersList = document.getElementById('exp-layers-list');
+  var expSelAll = document.getElementById('exp-sel-all');
+  var expSelVis = document.getElementById('exp-sel-vis');
+  var expSelNone = document.getElementById('exp-sel-none');
+
+  function openExportModal() {
+    if (!datasets.length) {
+      alert('Zatím nejsou nahrána žádná data pro export.');
+      return;
+    }
+    expDatasetSelect.innerHTML = '';
+    datasets.forEach(function (d) {
+      var opt = document.createElement('option');
+      opt.value = String(d.id);
+      opt.textContent = d.name + ' (' + d.res.features.length + ' objektů)';
+      expDatasetSelect.appendChild(opt);
+    });
+    updateExportLayersList();
+    exportModal.style.display = 'flex';
+  }
+
+  function closeExportModal() {
+    if (exportModal) exportModal.style.display = 'none';
+  }
+
+  function getSelectedExportDataset() {
+    var id = Number(expDatasetSelect.value);
+    return datasets.filter(function (d) { return d.id === id; })[0] || datasets[0];
+  }
+
+  function updateExportLayersList() {
+    var ds = getSelectedExportDataset();
+    if (!ds) { expLayersList.innerHTML = '<p class="hint">Žádná data.</p>'; return; }
+    expLayersList.innerHTML = '';
+    ds.res.layers.forEach(function (l) {
+      var row = document.createElement('label');
+      row.className = 'exp-layer-row';
+      var chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.value = l.name;
+      chk.checked = ds.visible[l.name] !== false;
+
+      var sw = document.createElement('span');
+      sw.className = 'sw';
+      var layCol = l.rgb ? l.rgb : ((l.aci === 7 || l.aci === 0) ? contrast() : C.aciHex(l.aci));
+      sw.style.background = layCol;
+
+      var nm = document.createElement('span');
+      nm.className = 'nm';
+      nm.style.flex = '1';
+      nm.textContent = l.name;
+
+      var cnt = document.createElement('span');
+      cnt.className = 'cnt';
+      cnt.textContent = l.count;
+
+      row.appendChild(chk);
+      row.appendChild(sw);
+      row.appendChild(nm);
+      row.appendChild(cnt);
+      expLayersList.appendChild(row);
+    });
+  }
+
+  if (expDatasetSelect) expDatasetSelect.onchange = updateExportLayersList;
+
+  if (expSelAll) expSelAll.onclick = function () {
+    expLayersList.querySelectorAll('input[type=checkbox]').forEach(function (cb) { cb.checked = true; });
+  };
+  if (expSelVis) expSelVis.onclick = function () {
+    var ds = getSelectedExportDataset();
+    if (!ds) return;
+    expLayersList.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      cb.checked = ds.visible[cb.value] !== false;
+    });
+  };
+  if (expSelNone) expSelNone.onclick = function () {
+    expLayersList.querySelectorAll('input[type=checkbox]').forEach(function (cb) { cb.checked = false; });
+  };
+
+  if (btnExportDialog) btnExportDialog.onclick = openExportModal;
+  if (btnExportClose) btnExportClose.onclick = closeExportModal;
+  if (btnExportCancel) btnExportCancel.onclick = closeExportModal;
+  if (exportModal) {
+    exportModal.onclick = function (e) {
+      if (e.target === exportModal) closeExportModal();
+    };
+  }
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && exportModal && exportModal.style.display !== 'none') closeExportModal();
+  });
+
+  if (btnExportRun) {
+    btnExportRun.onclick = function () {
+      var ds = getSelectedExportDataset();
+      if (!ds) return;
+      var checked = [];
+      expLayersList.querySelectorAll('input[type=checkbox]:checked').forEach(function (cb) {
+        checked.push(cb.value);
+      });
+      if (!checked.length) {
+        alert('Vyberte alespoň jednu úroveň k exportu.');
+        return;
+      }
+      var crs = expCrsSelect.value;
+      closeExportModal();
+      window.CadExportShp.exportDatasetToShp(ds, { crs: crs, layers: checked });
     };
   }
 
@@ -880,8 +1101,10 @@
         var lib = await getLibre();
         var ab = await file.arrayBuffer();
         var dwg = lib.inst.dwg_read_data(ab, lib.mod.Dwg_File_Type.DWG);
+        if (!dwg) throw new Error('Nepodařilo se přečíst data DWG (poškozený nebo nepodporovaný soubor).');
         var db = lib.inst.convert(dwg);
         try { lib.inst.dwg_free(dwg); } catch (e) { }
+        if (!db) throw new Error('Nepodařilo se převést strukturu výkresu DWG.');
         res = C.normalizeDwg(db, file.name);
       } else if (ext === 'dxf') {
         var buf = await file.arrayBuffer();

@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------
-   caddgn.js – čtení MicroStation DGN V8 přímo v prohlížeči.
+   caddgn.js – čtení MicroStation DGN V7 i V8 přímo v prohlížeči.
 
    Formát V8 není veřejně dokumentovaný; tento parser vznikl
    analýzou reálných souborů. Pokrývá to, co je v geodetických
@@ -11,7 +11,10 @@
    Nepodporováno: kóty (33), B-spliny, rastry, 3D varianty textů
    a elips, reference na jiné soubory.
 
-   Závislosti: CFB (compound file) – načte se z CDN při potřebě,
+   DGN V7 (plochý soubor, začíná bajty 08 09 fe 02) je čtený bez
+   závislostí; úrovně se jmenují „Úroveň N“ (V7 názvy úrovní nemá).
+
+   Závislosti pro V8: CFB (compound file) – načte se z CDN při potřebě,
    inflate přes vestavěné DecompressionStream.
    --------------------------------------------------------------- */
 (function (root) {
@@ -20,7 +23,7 @@
   var CFB_URL = 'https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js';
 
   /* výchozí paleta MicroStationu (index barvy 0–255) */
-  var PCT = ['#FFFFFF','#0000FF','#00FF00','#FF0000','#FFFF00','#FF00FF','#FF7F00','#00FFFF','#404040','#C0C0C0','#FE0060','#A0E000','#00FEA0','#8000A0','#B0B0B0','#00F0F0','#F0F000','#B04000','#0000A0','#00A000','#A00000','#A0A000','#A000A0','#00A0A0','#606060','#808080','#A0A0A0','#C0C0FF','#C0FFC0','#FFC0C0','#FFFFC0','#FFC0FF','#C0FFFF','#800000','#804000','#808000','#008000','#008080','#000080','#400080','#800080','#FF8080','#FFBF80','#FFFF80','#80FF80','#80FFFF','#8080FF','#BF80FF','#FF80FF','#FF4040','#FF9F40','#FFFF40','#40FF40','#40FFFF','#4040FF','#9F40FF','#FF40FF','#BF0000','#BF6000','#BFBF00','#00BF00','#00BFBF','#0000BF','#6000BF','#BF00BF','#400000','#402000','#404000','#004000','#004040','#000040','#200040','#400040','#FFD0D0','#FFE8D0','#FFFFD0','#D0FFD0','#D0FFFF','#D0D0FF','#E8D0FF','#FFD0FF','#FF6060','#FFAF60','#FFFF60','#60FF60','#60FFFF','#6060FF','#AF60FF','#FF60FF','#DF0000','#DF7000','#DFDF00','#00DF00','#00DFDF','#0000DF','#7000DF','#DF00DF','#600000','#603000','#606000','#006000','#006060','#000060','#300060','#600060','#FFE8E8','#FFF3E8','#FFFFE8','#E8FFE8','#E8FFFF','#E8E8FF','#F3E8FF','#FFE8FF','#FF9090','#FFC790','#FFFF90','#90FF90','#90FFFF','#9090FF','#C790FF','#FF90FF','#9F0000','#9F5000','#9F9F00','#009F00','#009F9F','#00009F','#50009F','#9F009F','#200000','#201000','#202000','#002000','#002020','#000020','#100020','#200020','#F0F0F0','#E0E0E0','#D0D0D0','#C0C0C0','#B0B0B0','#A0A0A0','#909090','#808080','#707070','#606060','#505050','#404040','#303030','#202020','#101010','#000000','#FF0000','#FF1000','#FF2000','#FF3000','#FF4000','#FF5000','#FF6000','#FF7000','#FF8000','#FF9000','#FFA000','#FFB000','#FFC000','#FFD000','#FFE000','#FFF000','#FFFF00','#F0FF00','#E0FF00','#D0FF00','#C0FF00','#B0FF00','#A0FF00','#90FF00','#80FF00','#70FF00','#60FF00','#50FF00','#40FF00','#30FF00','#20FF00','#10FF00','#00FF00','#00FF10','#00FF20','#00FF30','#00FF40','#00FF50','#00FF60','#00FF70','#00FF80','#00FF90','#00FFA0','#00FFB0','#00FFC0','#00FFD0','#00FFE0','#00FFF0','#00FFFF','#00F0FF','#00E0FF','#00D0FF','#00C0FF','#00B0FF','#00A0FF','#0090FF','#0080FF','#0070FF','#0060FF','#0050FF','#0040FF','#0030FF','#0020FF','#0010FF','#0000FF','#1000FF','#2000FF','#3000FF','#4000FF','#5000FF','#6000FF','#7000FF','#8000FF','#9000FF','#A000FF','#B000FF','#C000FF','#D000FF','#E000FF','#F000FF','#FF00FF','#FF00F0','#FF00E0','#FF00D0','#FF00C0','#FF00B0','#FF00A0','#FF0090','#FF0080','#FF0070','#FF0060','#FF0050','#FF0040','#FF0030','#FF0020','#FF0010','#FFFFFF'];
+  var PCT = ['#FFFFFF', '#0000FF', '#00FF00', '#FF0000', '#FFFF00', '#FF00FF', '#FF7F00', '#00FFFF', '#404040', '#C0C0C0', '#FE0060', '#A0E000', '#00FEA0', '#8000A0', '#B0B0B0', '#00F0F0', '#F0F000', '#B04000', '#0000A0', '#00A000', '#A00000', '#A0A000', '#A000A0', '#00A0A0', '#606060', '#808080', '#A0A0A0', '#C0C0FF', '#C0FFC0', '#FFC0C0', '#FFFFC0', '#FFC0FF', '#C0FFFF', '#800000', '#804000', '#808000', '#008000', '#008080', '#000080', '#400080', '#800080', '#FF8080', '#FFBF80', '#FFFF80', '#80FF80', '#80FFFF', '#8080FF', '#BF80FF', '#FF80FF', '#FF4040', '#FF9F40', '#FFFF40', '#40FF40', '#40FFFF', '#4040FF', '#9F40FF', '#FF40FF', '#BF0000', '#BF6000', '#BFBF00', '#00BF00', '#00BFBF', '#0000BF', '#6000BF', '#BF00BF', '#400000', '#402000', '#404000', '#004000', '#004040', '#000040', '#200040', '#400040', '#FFD0D0', '#FFE8D0', '#FFFFD0', '#D0FFD0', '#D0FFFF', '#D0D0FF', '#E8D0FF', '#FFD0FF', '#FF6060', '#FFAF60', '#FFFF60', '#60FF60', '#60FFFF', '#6060FF', '#AF60FF', '#FF60FF', '#DF0000', '#DF7000', '#DFDF00', '#00DF00', '#00DFDF', '#0000DF', '#7000DF', '#DF00DF', '#600000', '#603000', '#606000', '#006000', '#006060', '#000060', '#300060', '#600060', '#FFE8E8', '#FFF3E8', '#FFFFE8', '#E8FFE8', '#E8FFFF', '#E8E8FF', '#F3E8FF', '#FFE8FF', '#FF9090', '#FFC790', '#FFFF90', '#90FF90', '#90FFFF', '#9090FF', '#C790FF', '#FF90FF', '#9F0000', '#9F5000', '#9F9F00', '#009F00', '#009F9F', '#00009F', '#50009F', '#9F009F', '#200000', '#201000', '#202000', '#002000', '#002020', '#000020', '#100020', '#200020', '#F0F0F0', '#E0E0E0', '#D0D0D0', '#C0C0C0', '#B0B0B0', '#A0A0A0', '#909090', '#808080', '#707070', '#606060', '#505050', '#404040', '#303030', '#202020', '#101010', '#000000', '#FF0000', '#FF1000', '#FF2000', '#FF3000', '#FF4000', '#FF5000', '#FF6000', '#FF7000', '#FF8000', '#FF9000', '#FFA000', '#FFB000', '#FFC000', '#FFD000', '#FFE000', '#FFF000', '#FFFF00', '#F0FF00', '#E0FF00', '#D0FF00', '#C0FF00', '#B0FF00', '#A0FF00', '#90FF00', '#80FF00', '#70FF00', '#60FF00', '#50FF00', '#40FF00', '#30FF00', '#20FF00', '#10FF00', '#00FF00', '#00FF10', '#00FF20', '#00FF30', '#00FF40', '#00FF50', '#00FF60', '#00FF70', '#00FF80', '#00FF90', '#00FFA0', '#00FFB0', '#00FFC0', '#00FFD0', '#00FFE0', '#00FFF0', '#00FFFF', '#00F0FF', '#00E0FF', '#00D0FF', '#00C0FF', '#00B0FF', '#00A0FF', '#0090FF', '#0080FF', '#0070FF', '#0060FF', '#0050FF', '#0040FF', '#0030FF', '#0020FF', '#0010FF', '#0000FF', '#1000FF', '#2000FF', '#3000FF', '#4000FF', '#5000FF', '#6000FF', '#7000FF', '#8000FF', '#9000FF', '#A000FF', '#B000FF', '#C000FF', '#D000FF', '#E000FF', '#F000FF', '#FF00FF', '#FF00F0', '#FF00E0', '#FF00D0', '#FF00C0', '#FF00B0', '#FF00A0', '#FF0090', '#FF0080', '#FF0070', '#FF0060', '#FF0050', '#FF0040', '#FF0030', '#FF0020', '#FF0010', '#FFFFFF'];
 
   var HDR = 104;                 // délka společné hlavičky prvku
   var P_COMPLEX_HDR = 0x2000;    // prvek je hlavička komplexu/buňky
@@ -152,9 +155,237 @@
     return 1000;
   }
 
+
+  /* body elipsy / oblouku; a1 → a2 v radiánech (směr dle znaménka), rot = natočení hlavní osy */
+  function arcEll7(cx, cy, r1, r2, rot, a1, a2) {
+    var out = [], i, a, x, y, span = a2 - a1;
+    var nseg = Math.max(8, Math.min(180, Math.ceil(Math.abs(span) / (Math.PI / 36))));
+    var cr = Math.cos(rot), sr = Math.sin(rot);
+    for (i = 0; i <= nseg; i++) {
+      a = a1 + span * i / nseg; x = r1 * Math.cos(a); y = r2 * Math.sin(a);
+      out.push([cx + x * cr - y * sr, cy + x * sr + y * cr]);
+    }
+    return out;
+  }
+
+  /* =================================================================
+     DGN V7 (plochý binární soubor, bez OLE kontejneru)
+     Formát je veřejně popsaný (viz GDAL driver DGN) – 16bitová slova,
+     32bitová čísla s prohozenými slovy, reálná čísla ve formátu VAX D.
+     ================================================================= */
+
+  function isV7(u8) {
+    // první prvek V7 souboru je TCB: level 8, typ 9  (bajty 08 09 …)
+    return u8.length > 1536 && u8[1] === 0x09 && (u8[0] & 0x3f) === 8;
+  }
+
+  function unitFactor(s) {
+    s = String(s || '').replace(/\u0000/g, '').trim().toLowerCase();
+    var t = { m: 1, mm: 0.001, cm: 0.01, dm: 0.1, km: 1000, ft: 0.3048, 'in': 0.0254, yd: 0.9144, mi: 1609.344 };
+    return t[s] === undefined ? 1 : t[s];
+  }
+
+  /* Radix-50 → text (názvy buněk) */
+  function rad50(w) {
+    var set = ' ABCDEFGHIJKLMNOPQRSTUVWXYZ$.%0123456789', out = '';
+    out += set.charAt(Math.floor(w / 1600) % 40);
+    out += set.charAt(Math.floor(w / 40) % 40);
+    out += set.charAt(w % 40);
+    return out;
+  }
+
+  function parseDgn7(arrayBuffer, fileName, core) {
+    var u8 = new Uint8Array(arrayBuffer), n = u8.length;
+
+    function i32(o) { return (u8[o + 2] | (u8[o + 3] << 8) | (u8[o] << 16) | (u8[o + 1] << 24)) | 0; }
+    function u16(o) { return u8[o] | (u8[o + 1] << 8); }
+    function vax(o) {                               // VAX D-float → double
+      var w0 = u16(o), w1 = u16(o + 2), w2 = u16(o + 4), w3 = u16(o + 6);
+      var e = (w0 >> 7) & 0xff;
+      if (e === 0) return 0;
+      var f = (w0 & 0x7f) * 281474976710656 + w1 * 4294967296 + w2 * 65536 + w3;   // 2^48, 2^32, 2^16
+      var v = (1 + f / 36028797018963968) * Math.pow(2, e - 129);                   // 2^55
+      return (w0 & 0x8000) ? -v : v;
+    }
+
+    /* 1) rozdělit na prvky */
+    var els = [], p = 0;
+    while (p + 4 <= n) {
+      if ((u8[p] | (u8[p + 1] << 8)) === 0xffff) break;
+      var size = (u16(p + 2)) * 2 + 4;
+      if (p + size > n) break;
+      els.push({
+        p: p, size: size, level: u8[p] & 0x3f, complex: !!(u8[p] & 0x80),
+        type: u8[p + 1] & 0x7f, deleted: !!(u8[p + 1] & 0x80)
+      });
+      p += size;
+    }
+    if (!els.length) throw new Error('Soubor DGN V7 neobsahuje žádné prvky.');
+
+    /* 2) TCB – rozměr, měřítko, počátek */
+    var dim = 2, scale = 1, ox = 0, oy = 0, unit = 1, unitName = '', gotTcb = false, colorTable = null;
+    for (var t = 0; t < els.length; t++) {
+      var te = els[t];
+      if (te.type === 9 && !gotTcb && te.size >= 1264) {
+        gotTcb = true;
+        dim = (u8[te.p + 1214] & 0x40) ? 3 : 2;
+        var upsu = i32(te.p + 1112), supm = i32(te.p + 1116);
+        if (upsu > 0 && supm > 0) scale = 1 / (upsu * supm);
+        ox = vax(te.p + 1240); oy = vax(te.p + 1248);
+        unitName = String.fromCharCode(u8[te.p + 1120], u8[te.p + 1121]);
+        unit = unitFactor(unitName);
+      }
+      if (te.type === 5 && te.level === 1 && te.size >= 38 + 3 * 256 && !colorTable) {
+        colorTable = [];
+        for (var c = 0; c < 256; c++) {
+          var o = c === 255 ? te.p + 38 : te.p + 41 + c * 3;
+          colorTable[c] = '#' + [u8[o], u8[o + 1], u8[o + 2]].map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('').toUpperCase();
+        }
+      }
+    }
+    var pal = colorTable || PCT;
+
+    function X(v) { return (v - ox) * scale * unit; }
+    function Y(v) { return (v - oy) * scale * unit; }
+    function L(v) { return v * scale * unit; }
+    function quatRot(o) {                           // rotace kolem osy Z z kvaternionu
+      var w = i32(o), qx = i32(o + 4), qy = i32(o + 8), qz = i32(o + 12);
+      var nn = Math.sqrt(w * w + qx * qx + qy * qy + qz * qz) || 1;
+      return 2 * Math.atan2(qz / nn, w / nn);
+    }
+
+    /* 3) prvky → objekty */
+    var raw = [], skipped = {}, cell = '', bbox = [Infinity, Infinity, -Infinity, -Infinity];
+    function skip(name) { skipped[name] = (skipped[name] || 0) + 1; }
+
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i], q = e.p, g = null, props = {};
+      if (e.deleted) continue;
+      if (e.type === 9 || e.type === 8 || e.type === 10 || e.type === 5 || e.type === 1 || e.type === 0 || e.type === 66) continue;   // TCB, tabulky, aplikační data
+
+      var graphic = e.size >= 36;
+      var color = graphic ? u8[q + 35] : 0, weight = graphic ? (u8[q + 34] & 0xf8) >> 3 : 0;
+
+      if (!e.complex && e.type !== 2 && e.type !== 12 && e.type !== 14 && e.type !== 7) cell = '';
+
+      switch (e.type) {
+        case 2: {                                   // hlavička buňky
+          cell = (e.size >= 42 ? (rad50(u16(q + 38)) + rad50(u16(q + 40))).trim() : '');
+          continue;
+        }
+        case 7: case 12: case 14:                   // hlavičky komplexů – členy jdou zvlášť
+          continue;
+        case 3: {
+          var s1 = 36 + dim * 4;
+          if (e.size < s1 + dim * 4) { skip('LINE'); break; }
+          g = { kind: 'line', coords: [[X(i32(q + 36)), Y(i32(q + 40))], [X(i32(q + s1)), Y(i32(q + s1 + 4))]] };
+          break;
+        }
+        case 4: case 6: case 11: {
+          var cnt = u16(q + 36), cs = [], k;
+          if (!cnt || 38 + cnt * dim * 4 > e.size) { skip(TYPE_NAME[e.type] || ('typ ' + e.type)); break; }
+          for (k = 0; k < cnt; k++) cs.push([X(i32(q + 38 + k * dim * 4)), Y(i32(q + 42 + k * dim * 4))]);
+          if (e.type === 6 && cs.length > 2) { var a0 = cs[0], an = cs[cs.length - 1]; if (a0[0] !== an[0] || a0[1] !== an[1]) cs.push(a0.slice()); }
+          g = { kind: 'line', coords: cs }; props['vrcholů'] = cs.length;
+          break;
+        }
+        case 15: {                                  // elipsa / kružnice
+          var r1 = vax(q + 36) * scale * unit, r2 = vax(q + 44) * scale * unit, rot, cx, cy;
+          if (dim === 3) { rot = quatRot(q + 52); cx = X(vax(q + 68)); cy = Y(vax(q + 76)); }
+          else { rot = i32(q + 52) / 360000 * Math.PI / 180; cx = X(vax(q + 56)); cy = Y(vax(q + 64)); }
+          g = { kind: 'line', coords: arcEll7(cx, cy, r1, r2, rot, 0, 2 * Math.PI) };
+          props['poloměr'] = r1;
+          break;
+        }
+        case 16: {                                  // oblouk
+          var st = i32(q + 36) / 360000;
+          var sv = (u8[q + 42] | (u8[q + 43] << 8) | (u8[q + 40] << 16) | ((u8[q + 41] & 0x7f) << 24));
+          if (u8[q + 41] & 0x80) sv = -sv;
+          var sw = sv === 0 ? 360 : sv / 360000;
+          var pr1 = vax(q + 44) * scale * unit, pr2 = vax(q + 52) * scale * unit, prot, pcx, pcy;
+          if (dim === 3) { prot = quatRot(q + 60); pcx = X(vax(q + 76)); pcy = Y(vax(q + 84)); }
+          else { prot = i32(q + 60) / 360000 * Math.PI / 180; pcx = X(vax(q + 64)); pcy = Y(vax(q + 72)); }
+          var a1 = st * Math.PI / 180, a2 = (st + sw) * Math.PI / 180;
+          g = { kind: 'line', coords: arcEll7(pcx, pcy, pr1, pr2, prot, a1, a2) };
+          props['poloměr'] = pr1;
+          break;
+        }
+        case 17: {                                  // text
+          var tlen, tx, ty, trot, th, nch, so;
+          if (dim === 3) {
+            trot = quatRot(q + 46); tx = X(i32(q + 62)); ty = Y(i32(q + 66)); nch = u8[q + 74]; so = q + 76;
+          } else {
+            trot = i32(q + 46) / 360000 * Math.PI / 180; tx = X(i32(q + 50)); ty = Y(i32(q + 54)); nch = u8[q + 58]; so = q + 60;
+          }
+          th = i32(q + 42) * scale * unit * 6 / 1000;
+          if (!nch || so + nch > q + e.size) { skip('TEXT'); break; }
+          var str = new TextDecoder('windows-1250').decode(u8.subarray(so, so + nch)).replace(/\u0000/g, '');
+          g = { kind: 'text', coords: [[tx, ty]] };
+          props.text = str; props['výška'] = th; props['rotace'] = trot;
+          break;
+        }
+        default:
+          skip(TYPE_NAME[e.type] || ('typ ' + e.type));
+      }
+      if (!g || !g.coords.length) continue;
+      if (cell) props['buňka'] = cell;
+      if (weight) props['tloušťka'] = weight;
+      raw.push({ type: TYPE_NAME[e.type] || ('typ ' + e.type), level: e.level, color: color, kind: g.kind, coords: g.coords, handle: String(q), props: props });
+      for (var m = 0; m < g.coords.length; m++) {
+        var x = g.coords[m][0], y = g.coords[m][1];
+        if (x < bbox[0]) bbox[0] = x; if (y < bbox[1]) bbox[1] = y;
+        if (x > bbox[2]) bbox[2] = x; if (y > bbox[3]) bbox[3] = y;
+      }
+    }
+    if (!raw.length) throw new Error('V DGN V7 nejsou žádné podporované prvky.');
+
+    /* 4) vrstvy = čísla úrovní (V7 názvy úrovní nemá) */
+    var layers = {}, features = [], j;
+    for (j = 0; j < raw.length; j++) {
+      var f = raw[j], lname = 'Úroveň ' + f.level;
+      var col = pal[f.color] || pal[0];
+      if (!layers[lname]) layers[lname] = { name: lname, aci: 7, rgb: col, count: 0, level: f.level, colors: {}, kinds: {} };
+      layers[lname].count++;
+      layers[lname].colors[col] = (layers[lname].colors[col] || 0) + 1;
+      var gk7 = 'line';
+      if (f.kind === 'text') gk7 = 'text';
+      else if (f.kind === 'point') gk7 = 'point';
+      else if (f.type === 'SHAPE' || f.type === 'COMPLEX SHAPE') gk7 = 'polygon';
+      else if (f.type === 'ELLIPSE') gk7 = 'ellipse';
+      else if (f.type === 'ARC') gk7 = 'arc';
+      else if (f.type === 'LINE STRING' || f.type === 'COMPLEX CHAIN') gk7 = 'polyline';
+      else if (f.type === 'BSPLINE') gk7 = 'spline';
+      layers[lname].kinds[gk7] = (layers[lname].kinds[gk7] || 0) + 1;
+      f.props['úroveň'] = f.level; f.props['barva DGN'] = f.color;
+      features.push({
+        id: features.length, type: f.type, layer: lname,
+        aci: col === '#FFFFFF' ? 7 : 256, rgb: col === '#FFFFFF' ? null : col,
+        kind: f.kind, coords: f.coords, handle: f.handle, props: f.props
+      });
+    }
+    var ls = [], key;
+    for (key in layers) {
+      var l = layers[key], best = null, bc = -1, cc;
+      for (cc in l.colors) if (l.colors[cc] > bc) { bc = l.colors[cc]; best = cc; }
+      l.rgb = best || l.rgb; delete l.colors; ls.push(l);
+    }
+    ls.sort(function (a, b) { return a.level - b.level; });
+    return {
+      source: fileName, features: features, layers: ls, bbox: bbox, skipped: skipped,
+      info: { version: 7, is3d: dim === 3, unit: unitName.replace(/\u0000/g, '').trim() || 'm', levels: ls.length, models: 1 }
+    };
+  }
+
   /* ---------- hlavní parser ---------- */
 
   async function parseDgn(arrayBuffer, fileName, core) {
+    var head = new Uint8Array(arrayBuffer, 0, Math.min(16, arrayBuffer.byteLength));
+    var isOle = head.length >= 8 && head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
+    if (!isOle) {
+      if (isV7(new Uint8Array(arrayBuffer))) return parseDgn7(arrayBuffer, fileName, core);
+      var hex = Array.prototype.map.call(head.subarray(0, 8), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      throw new Error('Neznámý formát DGN (začátek souboru ' + hex + '). Podporuji DGN V7 a V8.');
+    }
     var CFB = root.CFB || await loadScript(CFB_URL);
     var cfb = CFB.read(new Uint8Array(arrayBuffer), { type: 'array' });
 
@@ -270,22 +501,6 @@
         }
       }
     }
-    /* classify DGN geometry kinds for layer icons */
-    function classifyDgnKind(f) {
-      var t = f.type;
-      if (f.kind === 'text') return 'text';
-      if (f.kind === 'point') return 'point';
-      if (t === 'SHAPE') return 'polygon';
-      if (t === 'ELLIPSE') {
-        // full ellipse or circle
-        return 'ellipse';
-      }
-      if (t === 'ARC') return 'arc';
-      if (t === 'LINE STRING') return 'polyline';
-      if (t === 'LINE') return 'line';
-      return 'line';
-    }
-
     if (!raw.length) throw new Error('V DGN nejsou žádné podporované prvky.');
 
     /* měřítko a přepočet na metry */
@@ -305,8 +520,15 @@
       if (!layers[lname]) layers[lname] = { name: lname, aci: 7, rgb: col, count: 0, level: f.level, colors: {}, kinds: {} };
       layers[lname].count++;
       layers[lname].colors[col] = (layers[lname].colors[col] || 0) + 1;
-      var gk = classifyDgnKind(f);
-      layers[lname].kinds[gk] = (layers[lname].kinds[gk] || 0) + 1;
+      var gk7 = 'line';
+      if (f.kind === 'text') gk7 = 'text';
+      else if (f.kind === 'point') gk7 = 'point';
+      else if (f.type === 'SHAPE' || f.type === 'COMPLEX SHAPE') gk7 = 'polygon';
+      else if (f.type === 'ELLIPSE') gk7 = 'ellipse';
+      else if (f.type === 'ARC') gk7 = 'arc';
+      else if (f.type === 'LINE STRING' || f.type === 'COMPLEX CHAIN') gk7 = 'polyline';
+      else if (f.type === 'BSPLINE') gk7 = 'spline';
+      layers[lname].kinds[gk7] = (layers[lname].kinds[gk7] || 0) + 1;
       f.props['úroveň'] = f.level;
       if (f.color !== 0xffffffff) f.props['barva DGN'] = f.color;
       features.push({
